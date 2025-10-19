@@ -1,19 +1,56 @@
 from rest_framework import serializers
+from .models import Department, Category, Ticket
 from django.contrib.auth import get_user_model
 
 User = get_user_model()
 
-class RegisterSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True)
+
+class DepartmentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Department
+        fields = ['id', 'name', 'description']
+
+
+class CategorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Category
+        fields = ['id', 'name']
+
+
+class TicketSerializer(serializers.ModelSerializer):
+    created_by = serializers.PrimaryKeyRelatedField(read_only=True, default=serializers.CurrentUserDefault())
+    assigned_to = serializers.PrimaryKeyRelatedField(queryset=User.objects.none(), required=False, allow_null=True)
+    department = DepartmentSerializer(read_only=True)
+    category = CategorySerializer(read_only=True)
+    department_id = serializers.PrimaryKeyRelatedField(
+        queryset=Department.objects.all(),
+        source='department',
+        write_only=True,
+        required=False,
+        allow_null=True
+    )
+    category_id = serializers.PrimaryKeyRelatedField(
+        queryset=Category.objects.all(),
+        source='category',
+        write_only=True,
+        required=False,
+        allow_null=True
+    )
 
     class Meta:
-        model = User
-        fields = ['id', 'username', 'email', 'password']
+        model = Ticket
+        fields = [
+            'id', 'title', 'description', 'status', 'priority',
+            'created_at', 'updated_at', 'due_date',
+            'created_by', 'assigned_to', 'department', 'category',
+            'department_id', 'category_id', 'is_active'
+        ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['assigned_to'].queryset = User.objects.all()
 
     def create(self, validated_data):
-        user = User.objects.create_user(
-            username=validated_data['username'],
-            email=validated_data.get('email'),
-            password=validated_data['password']
-        )
-        return user
+        user = self.context['request'].user
+        validated_data['created_by'] = user
+        return super().create(validated_data)
