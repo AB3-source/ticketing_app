@@ -1,56 +1,42 @@
 from rest_framework import serializers
-from .models import Department, Category, Ticket
 from django.contrib.auth import get_user_model
+from rest_framework_simplejwt.tokens import RefreshToken
+from .models import Ticket, Department, Category
 
 User = get_user_model()
 
+# ✅ USER REGISTRATION SERIALIZER
+class RegisterSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, required=True, style={'input_type': 'password'})
+    password2 = serializers.CharField(write_only=True, required=True, style={'input_type': 'password'})
 
-class DepartmentSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Department
-        fields = ['id', 'name', 'description']
+        model = User
+        fields = ['id', 'username', 'email', 'password', 'password2', 'first_name', 'last_name', 'department', 'phone_number']
+
+    def validate(self, attrs):
+        if attrs['password'] != attrs['password2']:
+            raise serializers.ValidationError({"password": "Passwords must match."})
+        return attrs
+
+    def create(self, validated_data):
+        validated_data.pop('password2')
+        user = User.objects.create_user(**validated_data)
+        return user
 
 
-class CategorySerializer(serializers.ModelSerializer):
+# ✅ SIMPLE USER SERIALIZER (for listing or nested usage)
+class UserSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Category
-        fields = ['id', 'name']
+        model = User
+        fields = ['id', 'username', 'email', 'first_name', 'last_name']
 
 
+# ✅ TICKET SERIALIZER
 class TicketSerializer(serializers.ModelSerializer):
-    created_by = serializers.PrimaryKeyRelatedField(read_only=True, default=serializers.CurrentUserDefault())
-    assigned_to = serializers.PrimaryKeyRelatedField(queryset=User.objects.none(), required=False, allow_null=True)
-    department = DepartmentSerializer(read_only=True)
-    category = CategorySerializer(read_only=True)
-    department_id = serializers.PrimaryKeyRelatedField(
-        queryset=Department.objects.all(),
-        source='department',
-        write_only=True,
-        required=False,
-        allow_null=True
-    )
-    category_id = serializers.PrimaryKeyRelatedField(
-        queryset=Category.objects.all(),
-        source='category',
-        write_only=True,
-        required=False,
-        allow_null=True
-    )
+    created_by = UserSerializer(read_only=True)
+    assigned_to = UserSerializer(read_only=True)
 
     class Meta:
         model = Ticket
-        fields = [
-            'id', 'title', 'description', 'status', 'priority',
-            'created_at', 'updated_at', 'due_date',
-            'created_by', 'assigned_to', 'department', 'category',
-            'department_id', 'category_id', 'is_active'
-        ]
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.fields['assigned_to'].queryset = User.objects.all()
-
-    def create(self, validated_data):
-        user = self.context['request'].user
-        validated_data['created_by'] = user
-        return super().create(validated_data)
+        fields = '__all__'
