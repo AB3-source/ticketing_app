@@ -7,6 +7,7 @@ from rest_framework.views import APIView
 
 from .serializers import RegisterSerializer, TicketSerializer
 from .models import Ticket
+from .permissions import IsOwnerOrAssigneeOrStaff
 
 User = get_user_model()
 
@@ -35,7 +36,7 @@ class LogoutView(APIView):
 # ✅ TICKET VIEWSET (Full CRUD + Filtering + Search)
 class TicketViewSet(viewsets.ModelViewSet):
     serializer_class = TicketSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, IsOwnerOrAssigneeOrStaff]
     queryset = Ticket.objects.filter(is_active=True).select_related(
         'department', 'category', 'created_by', 'assigned_to'
     ).order_by('-created_at')
@@ -52,3 +53,11 @@ class TicketViewSet(viewsets.ModelViewSet):
         # Soft delete instead of hard delete
         instance.is_active = False
         instance.save()
+        
+    def perform_update(self, serializer):
+        # If assigned_to is being changed and current user is not staff, prevent it
+        if 'assigned_to' in serializer.validated_data:
+            if not self.request.user.is_staff:
+                # remove assigned_to change, so only staff can assign
+                serializer.validated_data.pop('assigned_to', None)
+        serializer.save()
