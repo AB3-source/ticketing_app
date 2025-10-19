@@ -10,6 +10,7 @@ from .models import Ticket
 
 User = get_user_model()
 
+
 # ✅ USER REGISTRATION VIEW
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
@@ -31,11 +32,13 @@ class LogoutView(APIView):
             return Response({"error": str(e)}, status=400)
 
 
-# ✅ TICKET CRUD VIEWSET
+# ✅ TICKET VIEWSET (Full CRUD + Filtering + Search)
 class TicketViewSet(viewsets.ModelViewSet):
     serializer_class = TicketSerializer
     permission_classes = [permissions.IsAuthenticated]
-    queryset = Ticket.objects.all().order_by('-created_at')
+    queryset = Ticket.objects.filter(is_active=True).select_related(
+        'department', 'category', 'created_by', 'assigned_to'
+    ).order_by('-created_at')
 
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['status', 'priority', 'department', 'category', 'created_by', 'assigned_to']
@@ -44,3 +47,8 @@ class TicketViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
+
+    def perform_destroy(self, instance):
+        # Soft delete instead of hard delete
+        instance.is_active = False
+        instance.save()
