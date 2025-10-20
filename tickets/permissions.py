@@ -1,31 +1,57 @@
 from rest_framework import permissions
 
-class IsOwnerOrAssigneeOrStaff(permissions.BasePermission):
-    """
-    Object-level permission to allow editing only to:
-      - ticket owner (created_by),
-      - assigned user (assigned_to),
-      - or staff users.
-    Read allowed for authenticated users.
-    """
-
+class IsAdmin(permissions.BasePermission):
+    """Allow full access only to admin users."""
     def has_permission(self, request, view):
-        # Ensure user is authenticated for any access
-        return request.user and request.user.is_authenticated
+        return request.user.is_authenticated and request.user.role == 'admin'
+
+
+class IsSupport(permissions.BasePermission):
+    """Allow access to support users (limited to assigned tickets)."""
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and request.user.role == 'support'
+
+
+class IsTicketOwnerOrReadOnly(permissions.BasePermission):
+    """Allow users to access their own tickets or admins."""
+    def has_object_permission(self, request, view, obj):
+        if request.user.role == 'admin':
+            return True
+        if request.user.role == 'support':
+            return obj.assigned_to == request.user or request.method in permissions.SAFE_METHODS
+        return obj.created_by == request.user or request.method in permissions.SAFE_METHODS
+
+
+class TicketAccessPermission(permissions.BasePermission):
+    """
+    Controls ticket actions:
+    - Users: can create/view their own
+    - Support: can view/update assigned
+    - Admin: full access
+    """
+    def has_permission(self, request, view):
+        # Authenticated users only
+        return request.user.is_authenticated
 
     def has_object_permission(self, request, view, obj):
-        # SAFE_METHODS are allowed for any authenticated user
-        if request.method in permissions.SAFE_METHODS:
-            return True
-
         user = request.user
-        if user.is_staff:
+
+        # Admins: full control
+        if user.role == 'admin':
             return True
 
-        # owner or assignee may edit/delete
-        if hasattr(obj, 'created_by') and obj.created_by == user:
-            return True
-        if hasattr(obj, 'assigned_to') and obj.assigned_to == user:
-            return True
+        # Support: can view & update assigned tickets
+        if user.role == 'support':
+            if obj.assigned_to == user:
+                return True
+            return request.method in permissions.SAFE_METHODS
+
+        # Regular users: can view or create their own
+        if user.role == 'user':
+            if request.method in ['GET', 'HEAD', 'OPTIONS']:
+                return obj.created_by == user
+            if request.method == 'POST':
+                return True
+            return False
 
         return False
